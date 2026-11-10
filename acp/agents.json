@@ -1,0 +1,14 @@
+{
+  "stub": { "command": ["self", "stub-agent"] },
+  "codex": { "command": ["node_modules/.bin/codex-acp"] },
+  "claude": {
+    "command": ["node_modules/.bin/claude-code-acp"],
+    "env": { "CLAUDECODE": null },
+    "model": "haiku",
+    "sessionMeta": {
+      "claudeCode": {
+        "options": { "effort": "medium" }
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "your-mattermost-username": {
+    "agent": "claude",
+    "cwd": "."
+  }
+}

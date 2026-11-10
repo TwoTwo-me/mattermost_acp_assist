@@ -1,0 +1,8 @@
+{
+  "name": "mattermost-acp-assist",
+  "private": true,
+  "dependencies": {
+    "@zed-industries/claude-code-acp": "0.16.2",
+    "@zed-industries/codex-acp": "0.16.0"
+  }
+}

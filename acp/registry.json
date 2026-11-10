@@ -1,0 +1,4 @@
+{
+  "owner1": { "agent": "codex", "cwd": "workspaces/owner1" },
+  "owner2": { "agent": "claude", "cwd": "workspaces/owner2" }
+}

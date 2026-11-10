@@ -1,0 +1,119 @@
+name: Native release packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '15.0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: rust-docs,rust-src
+      - name: Check dependency notice sources
+        run: python3 scripts/generate-notices.py --check
+      - name: Select package version
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          version="$(python3 -c 'import tomllib; print("v" + tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')"
+          if [ "$REF_TYPE" = tag ] && [ "$REF_NAME" != "$version" ]; then
+            echo "Tag $REF_NAME does not match Cargo.toml $version" >&2
+            exit 1
+          fi
+          echo "tag=$version" >> "$GITHUB_OUTPUT"
+      - name: Test native runtime
+        run: cargo test --locked --target '${{ matrix.target }}'
+      - name: Build native runtime
+        run: cargo build --release --locked --target '${{ matrix.target }}'
+      - name: Package runtime allowlist
+        run: |
+          python3 scripts/package-release.py \
+            --binary 'target/${{ matrix.target }}/release/mattermost-acp-assist' \
+            --target '${{ matrix.target }}' \
+            --version '${{ steps.version.outputs.tag }}'
+      - name: Verify extracted runtime and adapters
+        run: |
+          python3 scripts/verify-release.py \
+            'dist/mattermost-acp-assist-${{ steps.version.outputs.tag }}-${{ matrix.target }}.tar.gz' \
+            --install-adapters
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: package
+    concurrency:
+      group: publish-${{ github.ref }}
+      cancel-in-progress: false
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Publish complete native release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          archives=( *.tar.gz )
+          checksums=( *.sha256 )
+          test "${#archives[@]}" -eq 4
+          test "${#checksums[@]}" -eq 4
+          cat -- "${checksums[@]}" > SHA256SUMS
+          sha256sum --check SHA256SUMS
+          if draft="$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')"; then
+            if [ "$draft" != true ]; then
+              echo "Published release $RELEASE_TAG is immutable; use a new version." >&2
+              exit 1
+            fi
+          else
+            gh release create "$RELEASE_TAG" --draft \
+              --verify-tag --title "$RELEASE_TAG" --generate-notes
+          fi
+          gh release upload "$RELEASE_TAG" "${archives[@]}" "${checksums[@]}" SHA256SUMS --clobber
+          gh release edit "$RELEASE_TAG" --draft=false

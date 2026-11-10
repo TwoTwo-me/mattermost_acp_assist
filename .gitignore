@@ -1,0 +1,11 @@
+.lab/
+.env
+.env.*
+!.env.example
+node_modules/
+artifacts/
+state/
+.codex-home/
+target/
+dist/
+/workspaces/
