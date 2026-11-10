@@ -9,3 +9,4 @@ state/
 target/
 dist/
 /workspaces/
+/acp/prompt.txt

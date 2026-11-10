@@ -1,0 +1,6 @@
+User question:
+{{question}}
+
+Mattermost thread permalink: {{mattermosturl}}
+
+Explain the likely cause and suggest concrete next steps in {{language}}.

@@ -294,7 +294,7 @@ async fn open_session(
         refresh_command: Some(&refresh),
         scratch_path: &scratch_path,
     }
-    .render();
+    .render(config.prompt_template.as_ref());
     let cwd = entry.cwd.to_string_lossy().into_owned();
     let root_body = [
         "ACP session".to_string(),
@@ -488,7 +488,7 @@ async fn continue_prompt(
         refresh_command: Some(&runner.refresh_command),
         scratch_path: &scratch_path,
     }
-    .render();
+    .render(shared.config.prompt_template.as_ref());
     let outcome = async {
         run_prompt(
             dm,

@@ -141,7 +141,7 @@ async fn web_probe(args: &[String]) -> Result<()> {
         refresh_command: None,
         scratch_path: &scratch_path,
     }
-    .render();
+    .render(config.prompt_template.as_ref());
     scratch.mark_in_use()?;
     let client = match AcpClient::spawn(&entry.agent, spec, &cwd).await {
         Ok(client) => client,

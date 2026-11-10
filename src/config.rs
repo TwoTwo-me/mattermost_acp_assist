@@ -1,3 +1,4 @@
+use crate::prompt::PromptTemplate;
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
@@ -36,6 +37,7 @@ pub struct Config {
     pub registry: HashMap<String, RegistryEntry>,
     pub state_file: PathBuf,
     pub response_language: String,
+    pub prompt_template: Option<PromptTemplate>,
 }
 
 impl Config {
@@ -241,6 +243,11 @@ fn load_agents(
                 .with_context(|| format!("agent \"{name}\" has invalid mode configuration"))?;
         let mut session_meta = spec.get("sessionMeta").cloned();
         if name == "claude" {
+            if !spawn_env.contains_key("ANTHROPIC_BASE_URL") {
+                if let Some(value) = env_value(file_env, "ANTHROPIC_BASE_URL") {
+                    spawn_env.insert("ANTHROPIC_BASE_URL".into(), Some(value));
+                }
+            }
             if let Some(extra_args) = extra_args.take() {
                 merge_claude_extra_args(&mut session_meta, extra_args)?;
             }
@@ -535,6 +542,18 @@ fn load_monitor_channel_ids(file_env: &HashMap<String, String>) -> Result<HashSe
     Ok(ids)
 }
 
+fn load_prompt_template(root: &Path, configured: Option<&str>) -> Result<Option<PromptTemplate>> {
+    let Some(configured) = configured.filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let path = root.join(configured);
+    let source = std::fs::read_to_string(&path)
+        .with_context(|| format!("could not read ACP_PROMPT_FILE {}", path.display()))?;
+    PromptTemplate::parse(source)
+        .with_context(|| format!("invalid ACP_PROMPT_FILE {}", path.display()))
+        .map(Some)
+}
+
 fn load_config() -> Result<Config> {
     let root = config_home()?;
     let workspace = std::env::current_dir().context("could not read current directory")?;
@@ -551,6 +570,8 @@ fn load_config() -> Result<Config> {
     let registry = load_registry(&root, &workspace, &file_env, &agents)?;
     let response_language =
         parse_response_language(env_value(&file_env, "ACP_RESPONSE_LANGUAGE").as_deref())?;
+    let prompt_template =
+        load_prompt_template(&root, env_value(&file_env, "ACP_PROMPT_FILE").as_deref())?;
     Ok(Config {
         mm_url,
         mm_team,
@@ -561,6 +582,7 @@ fn load_config() -> Result<Config> {
         agents,
         registry,
         response_language,
+        prompt_template,
         env_file,
         state_file: root.join("state").join("sessions.json"),
         config_home: root,
@@ -587,6 +609,60 @@ pub fn get_config() -> Result<&'static Config> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prompt_file_loader_preserves_paths_and_compiles_once() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "acp-template-loader-{}-{nonce}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        struct FixtureDir(PathBuf);
+        impl Drop for FixtureDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _fixture = FixtureDir(root.clone());
+        assert!(load_prompt_template(&root, None).unwrap().is_none());
+        assert!(load_prompt_template(&root, Some("")).unwrap().is_none());
+        let path = root.join(" prompt.txt ");
+        std::fs::write(&path, "Loaded {{question}}").unwrap();
+        let relative = load_prompt_template(&root, Some(" prompt.txt "))
+            .unwrap()
+            .unwrap();
+        let absolute = load_prompt_template(&root, path.to_str()).unwrap().unwrap();
+        std::fs::write(&path, "{{invalid}}").unwrap();
+        let context = crate::prompt::PromptContext {
+            language: "English",
+            permalink: "https://example.com",
+            thread: None,
+            question: "actual question",
+            refresh_command: None,
+            scratch_path: "/tmp/scratch",
+        };
+        assert!(context
+            .render(Some(&relative))
+            .contains("Loaded actual question"));
+        assert_eq!(
+            context.render(Some(&relative)),
+            context.render(Some(&absolute))
+        );
+        let error = load_prompt_template(&root, Some(" prompt.txt ")).unwrap_err();
+        assert!(format!("{error:#}").contains("byte offset 0"));
+        std::fs::write(&path, "").unwrap();
+        let empty = load_prompt_template(&root, path.to_str()).unwrap().unwrap();
+        assert!(context
+            .render(Some(&empty))
+            .contains("User question:\nactual question"));
+        std::fs::write(&path, [0xff]).unwrap();
+        assert!(load_prompt_template(&root, path.to_str()).is_err());
+        assert!(load_prompt_template(&root, Some("missing.txt")).is_err());
+    }
 
     #[test]
     fn language_defaults_and_env_file_values() {
