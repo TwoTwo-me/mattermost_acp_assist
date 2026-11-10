@@ -19,7 +19,7 @@ import time
 FILES = {
     "mattermost-acp-assist", "README.md", ".env.example", "acp/agents.json",
     "acp/registry.json", "package.json", "package-lock.json",
-    "THIRD_PARTY_LICENSES.txt",
+    "THIRD_PARTY_LICENSES.txt", "acp/prompt.example.txt",
 }
 
 

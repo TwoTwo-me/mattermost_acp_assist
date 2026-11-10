@@ -31,7 +31,7 @@ Linux musl 기반 배포판과 Windows용 바이너리는 제공하지 않습니
 터미널에서는 다음처럼 다운로드합니다. `TARGET`과 `VERSION`을 사용할 릴리스에 맞춥니다.
 
 ```bash
-VERSION=v0.1.3
+VERSION=v0.1.4
 TARGET=aarch64-apple-darwin
 ARCHIVE="mattermost-acp-assist-${VERSION}-${TARGET}.tar.gz"
 mkdir -p "$HOME/Downloads/acp-assist"
@@ -178,6 +178,20 @@ export ANTHROPIC_API_KEY
 
 `.env`에 모델 API 키를 적는 것만으로는 어댑터에 전달되지 않습니다. 이 앱은 `.env`를 셸 환경변수로 자동 export하지 않습니다. 이미 로그인한 Claude Code를 사용한다면 별도의 API 키 입력은 필요하지 않습니다.
 
+#### 선택 사항. Claude API 주소
+
+신뢰하는 프록시나 호환 API를 사용하려면 `.env`에 `ANTHROPIC_BASE_URL`을 설정합니다. 예제는 기본 Anthropic 주소이며 주석을 해제하기 전에는 적용되지 않습니다.
+
+```dotenv
+ANTHROPIC_BASE_URL=https://api.anthropic.com
+```
+
+이 값은 이름이 정확히 `claude`인 에이전트의 자식 프로세스 환경에만 추가합니다. 우선순위는 `acp/agents.json`의 `env.ANTHROPIC_BASE_URL`, 프로세스 환경변수, `.env` 순입니다. JSON에 키가 있으면 `null`이나 빈 문자열도 우선합니다. JSON의 `null`은 상속된 환경변수를 제거하고, 빈 문자열은 빈 값 그대로 전달합니다. 프로세스의 빈 값도 `.env` 값을 막고 그대로 전달됩니다. 모두 미설정이면 새 항목을 추가하지 않으며 `claude` 항목이 없으면 이 설정을 무시합니다.
+
+주소를 검증하거나 정규화하지 않으며 `/v1`을 붙이거나 경로 접두사와 끝의 `/`를 바꾸지 않습니다. 빈 주소를 받은 뒤의 동작은 어댑터와 SDK에 달려 있습니다. `.env`의 이 키만 명시적으로 전달하는 예외이며 모델 API 키나 다른 `.env` 값은 자동 export하지 않습니다. 다른 에이전트도 원래처럼 프로세스 환경은 상속하지만 이 `.env` 값은 주입하지 않습니다.
+
+앱은 자식 환경으로의 전달만 보장합니다. `sessionMeta.claudeCode.options.env`를 지정하면 현재 SDK가 상속 환경 전체를 그 객체로 대체하므로 이 주소가 사라질 수 있습니다. 앱은 두 환경 객체를 병합하지 않으며 managed settings도 최종 설정을 덮어쓸 수 있습니다. 실제 연결 주소를 확인하고, 모델 데이터와 인증정보를 받을 수 있는 신뢰하는 엔드포인트만 사용합니다. 설정 변경 후에는 앱을 재시작합니다.
+
 Codex를 선택하려면 registry의 `agent`를 `codex`로 바꾸고 해당 어댑터에서 사용할 Codex 인증과 모델 설정을 준비합니다. 사용하지 않는 어댑터의 모델 계정까지 인증할 필요는 없습니다. 어댑터가 번들한 CLI 버전과 기존 사용자 설정이 호환되지 않으면 초기화 오류가 날 수 있습니다.
 
 비공개 위키는 프로젝트의 MCP 또는 해당 에이전트 도구에 별도로 연결하고 인증합니다. Mattermost PAT는 위키나 모델 인증을 대신하지 않습니다. 일반 웹 주소도 에이전트에 웹 조회 도구가 있어야 실제로 읽을 수 있습니다.
@@ -211,6 +225,38 @@ ACP_CLAUDE_EXTRA_ARGS={"max-turns":"5","verbose":null}
 `acp/agents.json`의 `command`와 `env`는 어댑터 프로세스 설정이고, `sessionMeta`와 위 extraArgs는 해당 어댑터가 지원하는 내부 설정입니다. 알 수 없는 CLI 옵션의 지원을 보장하지 않습니다. extraArgs는 SDK가 정한 플래그를 덮어쓰거나 프로토콜을 깨뜨릴 수 있는 고급 설정입니다. 권한 변경에는 extraArgs의 `permission-mode`나 `dangerously-skip-permissions` 대신 `ACP_CLAUDE_MODE`를 사용해야 어댑터의 모드 상태와 일치합니다.
 
 권한 검사를 생략해도 API 토큰이나 OS 계정의 접근 범위가 늘어나는 것은 아닙니다. 하지만 읽기 중심 프롬프트는 쓰기 방지 장치가 아니므로 원문 스레드나 웹 페이지의 악의적인 내용이 도구 실행으로 이어질 위험이 있습니다. 제한이 필요하면 별도 OS 계정이나 실제 권한 제한이 있는 컨테이너에서 실행합니다.
+
+### 5. 선택 사항. 질문 프롬프트 편집
+
+설치 설정 폴더에서 예제를 복사합니다. `acp/prompt.txt`는 개인 설정이며 Git 추적과 배포 파일 목록에서 제외합니다.
+
+```bash
+cp acp/prompt.example.txt acp/prompt.txt
+```
+
+복사한 파일을 편집한 뒤 `.env`에 다음 값을 추가합니다.
+
+```dotenv
+ACP_PROMPT_FILE=acp/prompt.txt
+```
+
+`ACP_PROMPT_FILE`은 프로세스 환경변수가 `.env`보다 우선합니다. 미설정이거나 정확히 빈 문자열이면 기본 프롬프트를 사용합니다. 프로세스의 빈 값으로 `.env` 설정을 끌 수도 있습니다. 상대 경로는 실행 폴더나 선택한 env 파일의 폴더가 아니라 `ACP_ASSIST_HOME`으로 정한 설정 폴더 기준입니다. 절대 경로도 허용하며 비어 있지 않은 경로의 공백은 제거하지 않습니다. `.env`에서 앞뒤 공백이 있는 경로는 따옴표로 감쌉니다.
+
+파일은 UTF-8로 한 번 읽고 구문을 검사하므로 파일이나 설정을 바꾸면 앱을 재시작해야 합니다. 읽을 수 없는 파일, 잘못된 UTF-8, 잘못된 치환 문법은 ACP 프로세스를 실행하기 전에 오류를 냅니다. 오류에는 파일 경로와 구문 오류의 바이트 위치를 표시하며 파일 내용은 출력하지 않습니다. 빈 파일은 유효합니다.
+
+지원하는 변수는 다음 세 가지뿐이며 같은 변수를 여러 번 사용할 수 있습니다.
+
+| 변수 | 삽입할 값 |
+| --- | --- |
+| `{{mattermosturl}}` | 선택한 Mattermost 게시물의 permalink. `smoke --web`에서는 지정한 웹 URL |
+| `{{question}}` | 현재 질문. 첫 리액션은 `이거 해결 방법 제시해줘.`, 후속 질문은 self-DM 답글 |
+| `{{language}}` | 검증된 `ACP_RESPONSE_LANGUAGE` 값. 기본값은 `Korean` |
+
+변수 이름은 대소문자를 구분합니다. 알 수 없는 이름, 빈 이름, 이름 앞뒤 공백, 중첩된 `{{`, 닫히지 않은 `{{`는 허용하지 않습니다. 단일 중괄호와 짝이 없는 `}}`는 일반 텍스트입니다. 표현식, include, 환경변수 확장, 별도 escape 문법은 없습니다. 삽입한 질문이나 URL에 `{{language}}` 같은 문자열이 있어도 다시 치환하지 않습니다.
+
+템플릿은 기본 질문과 permalink 본문만 바꿉니다. `{{question}}`이 없으면 빈 파일을 포함해 실제 질문을 `User question` 블록으로 뒤에 덧붙입니다. 답변 언어, 읽은 URL 인용, 원문을 신뢰하지 않는 참고자료로 취급하는 규칙, 읽기 중심 작업 지침은 항상 앞에 붙습니다. scratch 경로, 재조회 명령과 첫 원문 스냅샷도 앱이 계속 제공합니다. 후속 질문에 원문을 자동 재조회하지 않는 동작은 바뀌지 않습니다.
+
+템플릿은 첫 질문, 후속 질문과 `smoke --web`에 적용합니다. 인수 없는 `smoke`의 고정 점검 질문은 바꾸지 않습니다. `ACP_PROMPT_FILE`을 지정하지 않으면 기존 기본 프롬프트를 그대로 사용하며 배포한 예제 파일은 실행에 필수가 아닙니다.
 
 ## 실행과 사용
 
@@ -303,7 +349,7 @@ self-DM은 공개 채널에 답변을 게시하지 않는다는 뜻이지 모델
 
 ```bash
 TARGET=aarch64-apple-darwin
-VERSION=v0.1.3
+VERSION=v0.1.4
 rustup component add rust-docs rust-src
 python3 scripts/generate-notices.py --check
 cargo test --locked --target "$TARGET"
@@ -316,6 +362,8 @@ python3 scripts/verify-release.py \
 ```
 
 macOS 릴리스는 `MACOSX_DEPLOYMENT_TARGET=15.0`으로 빌드합니다. 버전은 `Cargo.toml`과 일치해야 합니다. 패키징 스크립트는 기존 바이너리를 포장하며 빌드하지 않습니다. 바이너리를 빌드한 것과 같은 Rust toolchain으로 패키징해야 합니다. 명시적 파일 목록만 사용하고 tar 메타데이터와 gzip 시간을 고정하므로 같은 파일과 toolchain 고지로 같은 압축 파일을 만들 수 있습니다.
+
+압축 파일은 바이너리, `README.md`, `THIRD_PARTY_LICENSES.txt`, `.env.example`, `acp/agents.json`, `acp/registry.json`, `acp/prompt.example.txt`, `package.json`, `package-lock.json`의 총 9개 파일만 포함합니다. 선택한 개인 프롬프트 파일은 포함하지 않습니다.
 
 `Cargo.lock`을 변경하면 `python3 scripts/generate-notices.py`로 추적 중인 `THIRD_PARTY_LICENSES.txt`를 다시 생성합니다. 생성기는 네 배포 대상의 일반·빌드 의존성을 보수적으로 포함하며 각 crate의 라이선스, 저작권과 NOTICE 원문을 수집합니다. `ring`의 별도 소스 헤더 고지도 포함합니다. 이 목록은 바이너리에 실제 포함된 코드만의 목록이 아닙니다.
 
@@ -330,8 +378,8 @@ macOS 릴리스는 `MACOSX_DEPLOYMENT_TARGET=15.0`으로 빌드합니다. 버전
 검토한 변경을 커밋하고 push한 뒤 버전 태그를 게시합니다.
 
 ```bash
-git tag v0.1.3
-git push origin v0.1.3
+git tag v0.1.4
+git push origin v0.1.4
 ```
 
 ### 선택 사항. 로컬 Mattermost 실험

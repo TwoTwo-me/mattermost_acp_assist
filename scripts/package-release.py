@@ -25,6 +25,7 @@ FILES = {
     ".env.example": ".env.example",
     "acp/agents.json": "acp/agents.json",
     "acp/registry.json": "acp/registry.example.json",
+    "acp/prompt.example.txt": "acp/prompt.example.txt",
     "package.json": "package.json",
     "package-lock.json": "package-lock.json",
 }
@@ -83,7 +84,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", required=True, type=Path)
     parser.add_argument("--target", required=True, choices=TARGETS)
-    parser.add_argument("--version", required=True, help="release tag, for example v0.1.3")
+    parser.add_argument("--version", required=True, help="release tag, for example v0.1.4")
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     args = parser.parse_args()
     version = tomllib.loads((ROOT / "Cargo.toml").read_text())["package"]["version"]
